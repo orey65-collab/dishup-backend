@@ -1,4 +1,5 @@
 
+
 import os
 import base64
 import json
@@ -16,7 +17,7 @@ load_dotenv()
 
 app = FastAPI(title="DishUp API")
 
-# Configurazione CORS - Aperta per Netlify
+# Configurazione CORS - Fondamentale per far parlare Netlify con Render
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -27,9 +28,9 @@ app.add_middleware(
 )
 
 # Configurazione Google Gemini
-# Assicurati che su Render la variabile sia EMERGENT_LLM_KEY
+# transport='rest' risolve spesso i problemi di connessione 404/v1beta
 api_key = os.environ.get("EMERGENT_LLM_KEY")
-genai.configure(api_key=api_key)
+genai.configure(api_key=api_key, transport='rest')
 
 class ImageAnalysisRequest(BaseModel):
     image_base64: str
@@ -49,23 +50,21 @@ async def health_check():
 @app.post("/api/analyze-image")
 async def analyze_image(request: ImageAnalysisRequest):
     try:
-        # 1. Pulizia stringa base64 e conversione
+        # 1. Decodifica base64
         base64_data = re.sub(r'^data:image/.+;base64,', '', request.image_base64)
         image_bytes = base64.b64decode(base64_data)
         
-        # 2. Elaborazione immagine (ottimizzata per Render 512MB)
+        # 2. Ottimizzazione immagine per Render (512MB RAM)
         with Image.open(BytesIO(image_bytes)) as img:
             if img.mode != 'RGB': 
                 img = img.convert('RGB')
-            # Ridimensioniamo a 800px per sicurezza memoria
             img.thumbnail((800, 800)) 
             buffered = BytesIO()
             img.save(buffered, format="JPEG", quality=70)
             img_content = buffered.getvalue()
 
-        # 3. Chiamata a Gemini - USIAMO IL NOME MODELLO SEMPLIFICATO
-        # Se 'gemini-1.5-flash' fallisce ancora, prova 'gemini-1.5-flash-latest'
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # 3. Chiamata a Gemini - Usiamo l'alias 'latest' per evitare il 404
+        model = genai.GenerativeModel(model_name='gemini-1.5-flash-latest')
         
         prompt = "Identifica gli ingredienti alimentari in questa foto. Rispondi SOLO con un JSON: {\"ingredients\": [\"nome\", \"nome\"]}"
         
@@ -74,7 +73,7 @@ async def analyze_image(request: ImageAnalysisRequest):
             {'mime_type': 'image/jpeg', 'data': img_content}
         ])
         
-        # Estrazione JSON dalla risposta
+        # Estrazione JSON pulita
         json_match = re.search(r'\{.*\}', response.text, re.DOTALL)
         if json_match:
             return json.loads(json_match.group())
@@ -87,7 +86,8 @@ async def analyze_image(request: ImageAnalysisRequest):
 @app.post("/api/generate-recipe")
 async def generate_recipe(request: RecipeGenerationRequest):
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # Usiamo lo stesso modello stabile
+        model = genai.GenerativeModel(model_name='gemini-1.5-flash-latest')
         
         prompt = f"""Crea 3 ricette {request.language} per {request.course_type} usando: {', '.join(request.ingredients)}. 
         Rispondi SOLO in JSON con questa struttura:
@@ -106,5 +106,6 @@ async def generate_recipe(request: RecipeGenerationRequest):
 
 if __name__ == "__main__":
     import uvicorn
+    # Render imposta la porta automaticamente tramite variabile d'ambiente
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run(app, host="0.0.0.0", port=port)
