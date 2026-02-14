@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from typing import List
 from dotenv import load_dotenv
 from PIL import Image
-from google import genai # Nuova libreria
+from google import genai
 
 load_dotenv()
 
@@ -24,13 +24,16 @@ app.add_middleware(
     max_age=3600,
 )
 
-# Inizializzazione Client con la nuova chiave
 client = genai.Client(api_key=os.environ.get("EMERGENT_LLM_KEY"))
-# Usiamo l'ultimo modello disponibile
-MODEL_ID = "gemini-2.0-flash" 
+# Usiamo 1.5 Flash perché ha quote gratuite garantite
+MODEL_ID = "gemini-1.5-flash" 
 
 class ImageAnalysisRequest(BaseModel):
     image_base64: str
+
+class RecipeRequest(BaseModel):
+    ingredients: List[str]
+    course_type: str = "primo"
 
 @app.get("/health")
 async def health_check():
@@ -39,10 +42,8 @@ async def health_check():
 @app.post("/api/analyze-image")
 async def analyze_image(request: ImageAnalysisRequest):
     try:
-        # Pulizia base64
         base64_data = re.sub(r'^data:image/.+;base64,', '', request.image_base64)
         
-        # Analisi con il nuovo metodo SDK
         response = client.models.generate_content(
             model=MODEL_ID,
             contents=[
@@ -54,19 +55,23 @@ async def analyze_image(request: ImageAnalysisRequest):
             ]
         )
 
-        # Estrazione testo e pulizia JSON
-        text_response = response.text
-        json_match = re.search(r'\{.*\}', text_response, re.DOTALL)
-        
-        if json_match:
-            return json.loads(json_match.group())
-        return {"ingredients": []}
+        json_match = re.search(r'\{.*\}', response.text, re.DOTALL)
+        return json.loads(json_match.group()) if json_match else {"ingredients": []}
 
     except Exception as e:
-        print(f"Errore DishUp: {str(e)}")
+        print(f"Errore Analisi: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# Nota: Aggiungi qui l'endpoint per le ricette usando lo stesso 'client.models.generate_content'
+@app.post("/api/generate-recipe")
+async def generate_recipe(request: RecipeRequest):
+    try:
+        prompt = f"Crea 3 ricette per {request.course_type} con: {', '.join(request.ingredients)}. Rispondi SOLO JSON: {{ \"recipes\": [ {{ \"title\": \"\", \"prep_time\": 0, \"difficulty\": \"\", \"ingredients\": [], \"steps\": [] }} ] }}"
+        
+        response = client.models.generate_content(model=MODEL_ID, contents=prompt)
+        json_match = re.search(r'\{.*\}', response.text, re.DOTALL)
+        return json.loads(json_match.group()) if json_match else {"recipes": []}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn
