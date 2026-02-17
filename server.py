@@ -29,7 +29,7 @@ app.add_middleware(
 API_KEY = os.environ.get("EMERGENT_LLM_KEY")
 
 # URL FORZATO alla versione v1 stabile (questo risolve il 404 v1beta)
-GEMINI_URL = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash-001:generateContent?key={API_KEY}"
+GEMINI_URL = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash-latest:generateContent?key={API_KEY}"
 class ImageAnalysisRequest(BaseModel):
     image_base64: str
 
