@@ -26,8 +26,8 @@ app.add_middleware(
 
 API_KEY = os.environ.get("EMERGENT_LLM_KEY")
 
-# Questo URL usa la versione v1beta con il modello Flash standard
-GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={API_KEY}"
+# Proviamo il modello che Google ti ha mostrato nel Quick Start
+GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key={API_KEY}"
 
 class ImageAnalysisRequest(BaseModel):
     image_base64: str
