@@ -22,7 +22,7 @@ app.add_middleware(
 )
 
 API_KEY = os.environ.get("EMERGENT_LLM_KEY")
-# Usiamo il modello che ha funzionato!
+# Continuiamo con il modello che ha funzionato
 GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key={API_KEY}"
 
 class ImageAnalysisRequest(BaseModel):
@@ -39,7 +39,7 @@ async def analyze_image(request: ImageAnalysisRequest):
         payload = {
             "contents": [{
                 "parts": [
-                    {"text": "Identifica gli ingredienti in questa foto. Rispondi SOLO JSON: {\"ingredients\": [\"nome\"]}"},
+                    {"text": "Identifica gli ingredienti alimentari. Rispondi SOLO JSON: {\"ingredients\": [\"nome\"]}"},
                     {"inline_data": {"mime_type": "image/jpeg", "data": base64_data}}
                 ]
             }]
@@ -55,20 +55,21 @@ async def analyze_image(request: ImageAnalysisRequest):
 @app.post("/api/generate-recipe")
 async def generate_recipe(request: RecipeRequest):
     try:
-        # Prompt aggiornato con le tue richieste specifiche
+        # Prompt istruito per rispondere esattamente con i tuoi campi
         prompt = f"""
         Crea 3 ricette per {request.course_type} usando: {', '.join(request.ingredients)}.
-        Per ogni ricetta rispondi in ITALIANO seguendo RIGOROSAMENTE questo schema JSON:
+        Rispondi in ITALIANO.
+        Per ogni ricetta segui RIGOROSAMENTE questo schema JSON:
         {{
           "recipes": [
             {{
-              "title": "Nome ricetta",
-              "prep_time": 30,
-              "difficulty": "Facile",
-              "ingredients_list": ["quantità e nome ingrediente"],
-              "steps": ["passaggio 1", "passaggio 2"],
-              "wine_pairing": "Nome del vino abbinato e perché",
-              "origin_story": "Curiosità o perché questa ricetta è originale"
+              "title": "Nome della ricetta",
+              "prep_time": "45 min",
+              "difficulty": "Media",
+              "special_reason": "Spiega perché questa ricetta è speciale (es: unione di sapori, leggerezza, originalità)",
+              "ingredients_list": ["lista dettagliata con dosi"],
+              "procedure": ["passaggio 1", "passaggio 2", "passaggio 3"],
+              "sommelier_advice": "Nome del vino e perché si abbina perfettamente a questo piatto"
             }}
           ]
         }}
@@ -84,7 +85,7 @@ async def generate_recipe(request: RecipeRequest):
             return json.loads(re.search(r'\{.*\}', text, re.DOTALL).group())
     except Exception as e:
         print(f"Errore: {e}")
-        raise HTTPException(status_code=500, detail="Errore nella creazione della ricetta completa")
+        raise HTTPException(status_code=500, detail="Errore nella generazione della ricetta")
 
 if __name__ == "__main__":
     import uvicorn
