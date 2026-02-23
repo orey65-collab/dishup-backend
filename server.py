@@ -13,6 +13,7 @@ load_dotenv()
 
 app = FastAPI(title="DishUp API")
 
+# Configurazione CORS per permettere al frontend di comunicare col server
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -22,7 +23,7 @@ app.add_middleware(
 )
 
 API_KEY = os.environ.get("EMERGENT_LLM_KEY")
-# Continuiamo con il modello che ha funzionato
+# Modello Gemini 3 Flash Preview - L'unico sbloccato per il tuo account nel 2026
 GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key={API_KEY}"
 
 class ImageAnalysisRequest(BaseModel):
@@ -31,62 +32,92 @@ class ImageAnalysisRequest(BaseModel):
 class RecipeRequest(BaseModel):
     ingredients: List[str]
     course_type: str = "primo"
+    language: str = "it"
+
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
 
 @app.post("/api/analyze-image")
 async def analyze_image(request: ImageAnalysisRequest):
     try:
+        # Pulizia della stringa base64
         base64_data = re.sub(r'^data:image/.+;base64,', '', request.image_base64)
+        
         payload = {
             "contents": [{
                 "parts": [
-                    {"text": "Identifica gli ingredienti alimentari. Rispondi SOLO JSON: {\"ingredients\": [\"nome\"]}"},
+                    {"text": "Identifica SOLO gli ingredienti alimentari presenti. Rispondi esclusivamente in formato JSON: {\"ingredients\": [\"mela\", \"farina\"]}"},
                     {"inline_data": {"mime_type": "image/jpeg", "data": base64_data}}
                 ]
             }]
         }
+
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(GEMINI_URL, json=payload)
             result = response.json()
-            text = result["candidates"][0]["content"]["parts"][0]["text"]
-            return json.loads(re.search(r'\{.*\}', text, re.DOTALL).group())
+            
+            if "candidates" in result:
+                text = result["candidates"][0]["content"]["parts"][0]["text"]
+                json_match = re.search(r'\{.*\}', text, re.DOTALL)
+                return json.loads(json_match.group())
+            
+            raise Exception("Risposta Google non valida")
+
     except Exception as e:
+        print(f"ERRORE ANALISI: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/generate-recipe")
 async def generate_recipe(request: RecipeRequest):
     try:
-        # Prompt istruito per rispondere esattamente con i tuoi campi
+        # PROMPT OTTIMIZZATO PER IL TUO RecipeScreen.js
         prompt = f"""
-        Crea 3 ricette per {request.course_type} usando: {', '.join(request.ingredients)}.
-        Rispondi in ITALIANO.
-        Per ogni ricetta segui RIGOROSAMENTE questo schema JSON:
+        Crea 3 ricette per {request.course_type} usando questi ingredienti: {', '.join(request.ingredients)}.
+        La lingua deve essere {request.language}.
+        Rispondi RIGOROSAMENTE con un oggetto JSON che segue questa struttura:
         {{
           "recipes": [
             {{
-              "title": "Nome della ricetta",
-              "prep_time": "45 min",
-              "difficulty": "Media",
-              "special_reason": "Spiega perché questa ricetta è speciale (es: unione di sapori, leggerezza, originalità)",
-              "ingredients_list": ["lista dettagliata con dosi"],
-              "procedure": ["passaggio 1", "passaggio 2", "passaggio 3"],
-              "sommelier_advice": "Nome del vino e perché si abbina perfettamente a questo piatto"
+              "title": "Titolo Accattivante",
+              "prep_time": 45,
+              "difficulty": "media",
+              "servings": 2,
+              "calories": 400,
+              "special_reason": "Spiega perché è speciale (✨)",
+              "ingredients": [
+                {{ "name": "nome ingrediente", "quantity": "dose es. 200g" }}
+              ],
+              "steps": ["Passaggio 1", "Passaggio 2"],
+              "wine_pairing": {{
+                "wine": "Nome del Vino (🍷)",
+                "description": "Perché si abbina bene"
+              }},
+              "bon_appetit": "Augurio finale (🍽️)"
             }}
           ]
         }}
-        Rispondi solo con il JSON.
+        Non aggiungere testo prima o dopo il JSON.
         """
-        
+
         payload = {"contents": [{"parts": [{"text": prompt}]}]}
-        
-        async with httpx.AsyncClient(timeout=40.0) as client:
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(GEMINI_URL, json=payload)
             result = response.json()
-            text = result["candidates"][0]["content"]["parts"][0]["text"]
-            return json.loads(re.search(r'\{.*\}', text, re.DOTALL).group())
+            
+            if "candidates" in result:
+                text = result["candidates"][0]["content"]["parts"][0]["text"]
+                json_match = re.search(r'\{.*\}', text, re.DOTALL)
+                return json.loads(json_match.group())
+            
+            return {"recipes": []}
+
     except Exception as e:
-        print(f"Errore: {e}")
-        raise HTTPException(status_code=500, detail="Errore nella generazione della ricetta")
+        print(f"ERRORE RICETTA: {str(e)}")
+        raise HTTPException(status_code=500, detail="Errore nella creazione della ricetta")
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+    port = int(os.environ.get("PORT", 10000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
