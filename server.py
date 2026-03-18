@@ -59,7 +59,7 @@ base64_data = re.sub(r'^data:image/.+;base64,', '', request.image_base64)
 payload = {
 "contents": [{
 "parts": [
-{"text": "Identifica gli ingredienti alimentari. Rispondi in JSON: {"ingredients": ["item1"]}"},
+{"text": "Identifica gli ingredienti alimentari. Rispondi in JSON: {'ingredients': ['item1']}"},
 {"inline_data": {"mime_type": "image/jpeg", "data": base64_data}}
 ]
 }]
@@ -81,3 +81,33 @@ raise HTTPException(status_code=500, detail="Errore server")
 async def generate_recipe(request: RecipeRequest):
 today = str(date.today())
 user_key = f"{request.user_id}_{today}"
+if not request.is_premium:
+usage = user_usage.get(user_key, 0)
+if usage >= 1:
+raise HTTPException(status_code=403, detail="Limite raggiunto")
+user_usage[user_key] = usage + 1
+try:
+diet_instr = ""
+if request.dietary:
+if request.dietary.vegan: diet_instr += " Ricetta VEGANA."
+elif request.dietary.vegetarian: diet_instr += " Ricetta VEGETARIANA."
+if request.dietary.gluten_free: diet_instr += " Ricetta SENZA GLUTINE."
+prompt = f"Crea 3 ricette per {request.course_type} con: {', '.join(request.ingredients)}.{diet_instr} Lingua: {request.language}. Obiettivo: {request.gym_goal}. Rispondi solo in JSON con schema: {{ 'recipes': [] }}"
+payload = {"contents": [{"parts": [{"text": prompt}]}]}
+async with httpx.AsyncClient(timeout=60.0) as client:
+response = await client.post(BASE_URL, params={"key": API_KEY}, json=payload)
+if response.status_code != 200:
+logger.error(f"Errore Gemini: {response.text}")
+raise HTTPException(status_code=502, detail=f"Errore AI: {response.status_code}")
+result = response.json()
+text = result["candidates"][0]["content"]["parts"][0]["text"]
+json_match = re.search(r'{.*}', text, re.DOTALL)
+if json_match:
+data = json.loads(json_match.group())
+if not request.is_premium:
+data["remaining_limit"] = 0
+return data
+raise ValueError("JSON non valido")
+except Exception as e:
+logger.error(f"ERRORE GENERAZIONE: {str(e)}")
+raise HTTPException(status_code=500, detail=str(e))
